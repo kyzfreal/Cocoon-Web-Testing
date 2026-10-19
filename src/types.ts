@@ -8,6 +8,7 @@ export interface Product {
   description: string;
   ingredients: string;
   volume: string;
+  stock: number;
   inStock: boolean;
   isVegan: boolean;
   isPromo: boolean;
@@ -24,7 +25,8 @@ export interface User {
   email: string;
   phone: string;
   password: string;
-  role: 'user' | 'admin';
+  role: "user" | "admin";
+  isLocked: boolean;
 }
 
 export interface Order {
@@ -36,7 +38,7 @@ export interface Order {
   shippingFee: number;
   couponDiscount: number;
   finalTotal: number;
-  status: 'pending' | 'shipping' | 'completed';
+  status: "pending" | "shipping" | "completed";
   customerName: string;
   customerPhone: string;
   customerAddress: string;
