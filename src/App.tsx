@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Product, CartItem, User, Order } from './types';
-import { PRODUCTS, COUPONS, FREE_SHIPPING_THRESHOLD, SHIPPING_FEE_MAP, ADMIN_ACCOUNT, formatPrice } from './data';
+import { PRODUCTS, COUPONS, FREE_SHIPPING_THRESHOLD, SHIPPING_FEE_MAP, ADMIN_ACCOUNT, CATEGORIES, formatPrice } from './data';
 import SeleniumGuide from './SeleniumGuide';
 
 // Helper functions for localStorage
@@ -17,12 +17,25 @@ function saveToStorage<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-// Initialize admin account
+// Initialize admin account & migrate data
 function initAdmin() {
   const users = getFromStorage<User[]>('cocoon_users', []);
-  if (!users.find(u => u.id === ADMIN_ACCOUNT.id)) {
-    users.push(ADMIN_ACCOUNT);
-    saveToStorage('cocoon_users', users);
+  // Migrate: add isLocked field for old users
+  let needsSave = false;
+  const migrated = users.map(u => {
+    if (u.isLocked === undefined) {
+      needsSave = true;
+      return { ...u, isLocked: false };
+    }
+    return u;
+  });
+  // Add admin if not exists
+  if (!migrated.find(u => u.id === ADMIN_ACCOUNT.id)) {
+    migrated.push(ADMIN_ACCOUNT);
+    needsSave = true;
+  }
+  if (needsSave) {
+    saveToStorage('cocoon_users', migrated);
   }
 }
 
@@ -43,6 +56,7 @@ export default function App() {
   const [showProductDetail, setShowProductDetail] = useState<Product | null>(null);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
   const [currentPage, setCurrentPage] = useState<'home' | 'checkout' | 'order-history' | 'admin' | 'profile' | 'selenium-guide'>('home');
+  const [products, setProducts] = useState<Product[]>(PRODUCTS);
 
   // Load data on mount
   useEffect(() => {
@@ -51,10 +65,12 @@ export default function App() {
     const savedCart = getFromStorage<CartItem[]>('cocoon_cart', []);
     const savedOrders = getFromStorage<Order[]>('cocoon_orders', []);
     const savedUsers = getFromStorage<User[]>('cocoon_users', []);
+    const savedProducts = getFromStorage<Product[] | null>('cocoon_products', null);
     setCurrentUser(savedUser);
     setCart(savedCart);
     setOrders(savedOrders);
     setUsers(savedUsers);
+    if (savedProducts) setProducts(savedProducts);
   }, []);
 
   // Save data on change
@@ -62,6 +78,7 @@ export default function App() {
   useEffect(() => { saveToStorage('cocoon_cart', cart); }, [cart]);
   useEffect(() => { saveToStorage('cocoon_orders', orders); }, [orders]);
   useEffect(() => { saveToStorage('cocoon_users', users); }, [users]);
+  useEffect(() => { saveToStorage('cocoon_products', products); }, [products]);
 
   const showToast = useCallback((message: string, type: string = 'success') => {
     setToast({ message, type });
@@ -69,7 +86,7 @@ export default function App() {
   }, []);
 
   // Filter products
-  const filteredProducts = PRODUCTS.filter(p => {
+  const filteredProducts = products.filter(p => {
     const matchCategory = activeCategory === 'Tất cả' || p.category === activeCategory;
     const matchSearch = searchQuery === '' ||
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -97,6 +114,7 @@ export default function App() {
       phone: phoneRegex.test(emailPhone) ? emailPhone : '',
       password,
       role: 'user',
+      isLocked: false,
     };
     const updatedUsers = [...existingUsers, newUser];
     setUsers(updatedUsers);
@@ -110,6 +128,9 @@ export default function App() {
       (u.email === loginId || u.phone === loginId || u.name === loginId) && u.password === password
     );
     if (user) {
+      if (user.isLocked) {
+        return { success: false, error: 'Tài khoản đã bị khóa! Vui lòng liên hệ quản trị viên.' };
+      }
       setCurrentUser(user);
       return { success: true, error: '' };
     }
@@ -204,6 +225,40 @@ export default function App() {
     const updatedOrders = orders.map(o => o.id === orderId ? { ...o, status } : o);
     setOrders(updatedOrders);
     saveToStorage('cocoon_orders', updatedOrders);
+  };
+
+  // Product CRUD functions
+  const addProduct = (product: Omit<Product, 'id'>) => {
+    const newProduct: Product = { ...product, id: 'p' + Date.now() };
+    const updated = [...products, newProduct];
+    setProducts(updated);
+    saveToStorage('cocoon_products', updated);
+    return newProduct;
+  };
+
+  const updateProduct = (id: string, data: Partial<Product>) => {
+    const updated = products.map(p => p.id === id ? { ...p, ...data } : p);
+    setProducts(updated);
+    saveToStorage('cocoon_products', updated);
+  };
+
+  const deleteProduct = (id: string) => {
+    const updated = products.filter(p => p.id !== id);
+    setProducts(updated);
+    saveToStorage('cocoon_products', updated);
+  };
+
+  // Customer management functions
+  const toggleUserLock = (userId: string) => {
+    const updated = users.map(u => u.id === userId ? { ...u, isLocked: !u.isLocked } : u);
+    setUsers(updated);
+    saveToStorage('cocoon_users', updated);
+  };
+
+  const updateUserInfo = (userId: string, data: Partial<User>) => {
+    const updated = users.map(u => u.id === userId ? { ...u, ...data } : u);
+    setUsers(updated);
+    saveToStorage('cocoon_users', updated);
   };
 
   // Update user profile
@@ -360,7 +415,7 @@ export default function App() {
                 Đẹp Tự Nhiên Từ Thiên Nhiên
               </h2>
               <p className="text-lg text-green-700 mb-8 max-w-2xl mx-auto">
-                Cocoon - Thương hiệu mỹ phẩm thuần chay đầu tiên tại Việt Nam. 
+                Cocoon - Thương hiệu mỹ phẩm thuần chay đầu tiên tại Việt Nam.
                 100% nguyên liệu từ thiên nhiên, không thử nghiệm trên động vật.
               </p>
               <div className="flex gap-4 justify-center flex-wrap">
@@ -517,7 +572,14 @@ export default function App() {
         <AdminPanel
           orders={orders}
           users={users}
+          products={products}
           onUpdateOrderStatus={updateOrderStatus}
+          onAddProduct={addProduct}
+          onUpdateProduct={updateProduct}
+          onDeleteProduct={deleteProduct}
+          onToggleUserLock={toggleUserLock}
+          onUpdateUserInfo={updateUserInfo}
+          showToast={showToast}
           onBack={() => setCurrentPage('home')}
         />
       )}
@@ -1174,16 +1236,121 @@ function OrderHistoryPage({ orders, onBack }: {
 }
 
 // ============== ADMIN PANEL ==============
-function AdminPanel({ orders, users, onUpdateOrderStatus, onBack }: {
+function AdminPanel({ orders, users, products, onUpdateOrderStatus, onAddProduct, onUpdateProduct, onDeleteProduct, onToggleUserLock, onUpdateUserInfo, showToast, onBack }: {
   orders: Order[];
   users: User[];
+  products: Product[];
   onUpdateOrderStatus: (id: string, status: Order['status']) => void;
+  onAddProduct: (product: Omit<Product, 'id'>) => Product;
+  onUpdateProduct: (id: string, data: Partial<Product>) => void;
+  onDeleteProduct: (id: string) => void;
+  onToggleUserLock: (userId: string) => void;
+  onUpdateUserInfo: (userId: string, data: Partial<User>) => void;
+  showToast: (msg: string, type?: string) => void;
   onBack: () => void;
 }) {
-  const [adminTab, setAdminTab] = useState<'orders' | 'users'>('orders');
+  const [adminTab, setAdminTab] = useState<'orders' | 'products' | 'customers' | 'users'>('orders');
+
+  // Product management states
+  const [productSearch, setProductSearch] = useState('');
+  const [productCatFilter, setProductCatFilter] = useState('Tất cả');
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [productForm, setProductForm] = useState({
+    name: '', category: 'Chăm sóc da', price: '', stock: '', description: '', image: '🌿', ingredients: '', volume: '', isVegan: true, isPromo: false,
+  });
+
+  // Customer management states
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [viewingCustomer, setViewingCustomer] = useState<User | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<User | null>(null);
+
+  // Filter products for admin
+  const adminFilteredProducts = products.filter(p => {
+    const matchCat = productCatFilter === 'Tất cả' || p.category === productCatFilter;
+    const matchSearch = productSearch === '' || p.name.toLowerCase().includes(productSearch.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  // Filter customers
+  const customers = users.filter(u => u.role !== 'admin');
+  const filteredCustomers = customers.filter(u => {
+    if (!customerSearch) return true;
+    const q = customerSearch.toLowerCase();
+    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  // Product form handlers
+  const openAddProduct = () => {
+    setEditingProduct(null);
+    setProductForm({ name: '', category: 'Chăm sóc da', price: '', stock: '', description: '', image: '🌿', ingredients: '', volume: '', isVegan: true, isPromo: false });
+    setShowProductForm(true);
+  };
+
+  const openEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setProductForm({
+      name: p.name, category: p.category, price: String(p.price), stock: String(p.stock),
+      description: p.description, image: p.image, ingredients: p.ingredients, volume: p.volume,
+      isVegan: p.isVegan, isPromo: p.isPromo,
+    });
+    setShowProductForm(true);
+  };
+
+  const handleSaveProduct = () => {
+    const price = Number(productForm.price);
+    const stock = Number(productForm.stock);
+    if (!productForm.name.trim()) { showToast('Vui lòng nhập tên sản phẩm!', 'error'); return; }
+    if (isNaN(price) || price < 0) { showToast('Giá sản phẩm không được âm!', 'error'); return; }
+    if (isNaN(stock) || stock < 0) { showToast('Số lượng tồn kho không được âm!', 'error'); return; }
+    if (!productForm.category) { showToast('Vui lòng chọn danh mục!', 'error'); return; }
+
+    const productData = {
+      name: productForm.name.trim(),
+      category: productForm.category,
+      price,
+      stock,
+      inStock: stock > 0,
+      description: productForm.description,
+      image: productForm.image || '🌿',
+      ingredients: productForm.ingredients,
+      volume: productForm.volume,
+      isVegan: productForm.isVegan,
+      isPromo: productForm.isPromo,
+    };
+
+    if (editingProduct) {
+      onUpdateProduct(editingProduct.id, productData);
+      showToast('Cập nhật sản phẩm thành công!');
+    } else {
+      onAddProduct(productData);
+      showToast('Thêm sản phẩm thành công!');
+    }
+    setShowProductForm(false);
+    setEditingProduct(null);
+  };
+
+  const handleDeleteProduct = (id: string) => {
+    onDeleteProduct(id);
+    setConfirmDelete(null);
+    showToast('Đã xóa sản phẩm!');
+  };
+
+  // Customer handlers
+  const handleSaveCustomer = () => {
+    if (!editingCustomer) return;
+    onUpdateUserInfo(editingCustomer.id, {
+      name: editingCustomer.name,
+      email: editingCustomer.email,
+      phone: editingCustomer.phone,
+    });
+    showToast('Cập nhật thông tin khách hàng thành công!');
+    setEditingCustomer(null);
+  };
 
   return (
-    <div id="admin-panel" className="max-w-6xl mx-auto px-4 py-8">
+    <div id="admin-panel" className="max-w-7xl mx-auto px-4 py-8">
       <button onClick={onBack} className="text-green-700 hover:text-green-900 mb-6 font-medium">
         <i className="fas fa-arrow-left mr-2"></i> Quay lại
       </button>
@@ -1192,21 +1359,22 @@ function AdminPanel({ orders, users, onUpdateOrderStatus, onBack }: {
       </h2>
 
       {/* Tabs */}
-      <div className="flex border-b mb-6">
-        <button
-          className={`tab-btn ${adminTab === 'orders' ? 'active' : ''}`}
-          onClick={() => setAdminTab('orders')}
-        >
+      <div className="flex border-b mb-6 overflow-x-auto">
+        <button id="tab-orders" className={`tab-btn ${adminTab === 'orders' ? 'active' : ''}`} onClick={() => setAdminTab('orders')}>
           <i className="fas fa-box mr-1"></i> Đơn hàng ({orders.length})
         </button>
-        <button
-          className={`tab-btn ${adminTab === 'users' ? 'active' : ''}`}
-          onClick={() => setAdminTab('users')}
-        >
-          <i className="fas fa-users mr-1"></i> Người dùng ({users.filter(u => u.role !== 'admin').length})
+        <button id="tab-products" className={`tab-btn ${adminTab === 'products' ? 'active' : ''}`} onClick={() => setAdminTab('products')}>
+          <i className="fas fa-boxes mr-1"></i> Sản phẩm ({products.length})
+        </button>
+        <button id="tab-customers" className={`tab-btn ${adminTab === 'customers' ? 'active' : ''}`} onClick={() => setAdminTab('customers')}>
+          <i className="fas fa-user-friends mr-1"></i> Khách hàng ({customers.length})
+        </button>
+        <button id="tab-users" className={`tab-btn ${adminTab === 'users' ? 'active' : ''}`} onClick={() => setAdminTab('users')}>
+          <i className="fas fa-users mr-1"></i> Tất cả người dùng
         </button>
       </div>
 
+      {/* ===== ORDERS TAB ===== */}
       {adminTab === 'orders' && (
         <div id="admin-order-list" className="space-y-4">
           {orders.length === 0 ? (
@@ -1252,6 +1420,350 @@ function AdminPanel({ orders, users, onUpdateOrderStatus, onBack }: {
         </div>
       )}
 
+      {/* ===== PRODUCTS TAB ===== */}
+      {adminTab === 'products' && (
+        <div id="admin-product-section">
+          {/* Toolbar */}
+          <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
+            <input
+              type="text"
+              id="admin-product-search"
+              placeholder="Tìm kiếm sản phẩm..."
+              className="flex-1 min-w-[200px]"
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+            />
+            <select
+              id="admin-product-cat-filter"
+              className="w-auto"
+              value={productCatFilter}
+              onChange={(e) => setProductCatFilter(e.target.value)}
+            >
+              <option value="Tất cả">Tất cả danh mục</option>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button id="btn-add-product" className="btn-primary whitespace-nowrap" onClick={openAddProduct}>
+              <i className="fas fa-plus mr-1"></i> Thêm sản phẩm
+            </button>
+          </div>
+
+          {/* Product Table */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" id="admin-product-table">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left p-3 font-semibold text-gray-700">Mã SP</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Hình</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Tên sản phẩm</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Danh mục</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Giá</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Tồn kho</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Trạng thái</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminFilteredProducts.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">Không tìm thấy sản phẩm.</td></tr>
+                  ) : (
+                    adminFilteredProducts.map(p => (
+                      <tr key={p.id} className="border-t hover:bg-gray-50" data-product-row={p.id}>
+                        <td className="p-3 font-mono text-xs text-gray-500">{p.id}</td>
+                        <td className="p-3 text-2xl">{p.image}</td>
+                        <td className="p-3 font-medium text-gray-800">{p.name}</td>
+                        <td className="p-3 text-gray-600">{p.category}</td>
+                        <td className="p-3 font-semibold text-green-700">{formatPrice(p.price)}</td>
+                        <td className="p-3">
+                          <span className={p.stock > 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>{p.stock}</span>
+                        </td>
+                        <td className="p-3">
+                          {p.stock > 0
+                            ? <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Còn hàng</span>
+                            : <span className="out-of-stock-badge">Hết hàng</span>
+                          }
+                          {p.isPromo && <span className="promo-badge ml-1">KM</span>}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex gap-1">
+                            <button
+                              id={`btn-edit-product-${p.id}`}
+                              className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
+                              onClick={() => openEditProduct(p)}
+                            >
+                              <i className="fas fa-edit"></i> Sửa
+                            </button>
+                            <button
+                              id={`btn-delete-product-${p.id}`}
+                              className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
+                              onClick={() => setConfirmDelete(p.id)}
+                            >
+                              <i className="fas fa-trash"></i> Xóa
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Add/Edit Product Modal */}
+          {showProductForm && (
+            <div className="modal-overlay" id="product-form-modal" onClick={(e) => e.target === e.currentTarget && setShowProductForm(false)}>
+              <div className="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b flex justify-between items-center bg-green-50">
+                  <h3 className="text-lg font-bold text-green-800">
+                    {editingProduct ? <><i className="fas fa-edit mr-2"></i> Sửa sản phẩm</> : <><i className="fas fa-plus mr-2"></i> Thêm sản phẩm mới</>}
+                  </h3>
+                  <button onClick={() => setShowProductForm(false)} className="text-gray-400 hover:text-gray-600 text-xl"><i className="fas fa-times"></i></button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Mã sản phẩm</label>
+                      <input type="text" id="product-form-id" value={editingProduct?.id || 'Tự động'} disabled className="bg-gray-100" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Hình ảnh (emoji)</label>
+                      <input type="text" id="product-form-image" value={productForm.image} onChange={(e) => setProductForm({...productForm, image: e.target.value})} placeholder="🌿" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tên sản phẩm *</label>
+                    <input type="text" id="product-form-name" value={productForm.name} onChange={(e) => setProductForm({...productForm, name: e.target.value})} placeholder="Nhập tên sản phẩm" />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Danh mục *</label>
+                      <select id="product-form-category" value={productForm.category} onChange={(e) => setProductForm({...productForm, category: e.target.value})}>
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Dung tích</label>
+                      <input type="text" id="product-form-volume" value={productForm.volume} onChange={(e) => setProductForm({...productForm, volume: e.target.value})} placeholder="200ml" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Giá (VNĐ) *</label>
+                      <input type="number" id="product-form-price" min="0" value={productForm.price} onChange={(e) => setProductForm({...productForm, price: e.target.value})} placeholder="0" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Số lượng tồn kho *</label>
+                      <input type="number" id="product-form-stock" min="0" value={productForm.stock} onChange={(e) => setProductForm({...productForm, stock: e.target.value})} placeholder="0" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
+                    <textarea id="product-form-description" rows={3} value={productForm.description} onChange={(e) => setProductForm({...productForm, description: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Thành phần</label>
+                    <input type="text" id="product-form-ingredients" value={productForm.ingredients} onChange={(e) => setProductForm({...productForm, ingredients: e.target.value})} />
+                  </div>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" id="product-form-vegan" checked={productForm.isVegan} onChange={(e) => setProductForm({...productForm, isVegan: e.target.checked})} />
+                      <span className="text-sm font-medium">100% Thuần chay</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" id="product-form-promo" checked={productForm.isPromo} onChange={(e) => setProductForm({...productForm, isPromo: e.target.checked})} />
+                      <span className="text-sm font-medium">Khuyến mãi</span>
+                    </label>
+                  </div>
+                </div>
+                <div className="p-6 border-t flex gap-3 justify-end">
+                  <button className="btn-secondary" onClick={() => setShowProductForm(false)}>Hủy</button>
+                  <button id="btn-save-product" className="btn-primary" onClick={handleSaveProduct}>
+                    <i className="fas fa-save mr-1"></i> {editingProduct ? 'Cập nhật' : 'Thêm mới'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Confirm Delete Modal */}
+          {confirmDelete && (
+            <div className="modal-overlay" id="confirm-delete-modal" onClick={(e) => e.target === e.currentTarget && setConfirmDelete(null)}>
+              <div className="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 text-center">
+                <div className="text-5xl mb-4">⚠️</div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Xác nhận xóa</h3>
+                <p className="text-gray-600 mb-6">Bạn có chắc chắn muốn xóa sản phẩm này? Hành động này không thể hoàn tác.</p>
+                <div className="flex gap-3 justify-center">
+                  <button id="btn-cancel-delete" className="btn-secondary" onClick={() => setConfirmDelete(null)}>Hủy</button>
+                  <button id="btn-confirm-delete" className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold" onClick={() => handleDeleteProduct(confirmDelete)}>
+                    <i className="fas fa-trash mr-1"></i> Xóa
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== CUSTOMERS TAB ===== */}
+      {adminTab === 'customers' && (
+        <div id="admin-customer-section">
+          {/* Search */}
+          <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+            <input
+              type="text"
+              id="admin-customer-search"
+              placeholder="Tìm kiếm theo tên hoặc email..."
+              className="w-full"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Customer Table */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" id="admin-customer-table">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left p-3 font-semibold text-gray-700">Tên khách hàng</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Email</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">SĐT</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Trạng thái</th>
+                    <th className="text-left p-3 font-semibold text-gray-700">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCustomers.length === 0 ? (
+                    <tr><td colSpan={5} className="text-center py-8 text-gray-400">Không tìm thấy khách hàng.</td></tr>
+                  ) : (
+                    filteredCustomers.map(u => (
+                      <tr key={u.id} className="border-t hover:bg-gray-50" data-customer-row={u.id}>
+                        <td className="p-3 font-medium text-gray-800">{u.name}</td>
+                        <td className="p-3 text-gray-600">{u.email || '-'}</td>
+                        <td className="p-3 text-gray-600">{u.phone || '-'}</td>
+                        <td className="p-3">
+                          {u.isLocked
+                            ? <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-semibold">Đã khóa</span>
+                            : <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Hoạt động</span>
+                          }
+                        </td>
+                        <td className="p-3">
+                          <div className="flex gap-1">
+                            <button
+                              id={`btn-view-customer-${u.id}`}
+                              className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                              onClick={() => setViewingCustomer(u)}
+                            >
+                              <i className="fas fa-eye"></i> Xem
+                            </button>
+                            <button
+                              id={`btn-edit-customer-${u.id}`}
+                              className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
+                              onClick={() => setEditingCustomer({...u})}
+                            >
+                              <i className="fas fa-edit"></i> Sửa
+                            </button>
+                            <button
+                              id={`btn-toggle-lock-${u.id}`}
+                              className={`px-2 py-1 rounded text-xs ${u.isLocked ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}
+                              onClick={() => onToggleUserLock(u.id)}
+                            >
+                              <i className={`fas ${u.isLocked ? 'fa-unlock' : 'fa-lock'} mr-1`}></i>
+                              {u.isLocked ? 'Mở khóa' : 'Khóa'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* View Customer Detail Modal */}
+          {viewingCustomer && (
+            <div className="modal-overlay" id="view-customer-modal" onClick={(e) => e.target === e.currentTarget && setViewingCustomer(null)}>
+              <div className="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+                <div className="p-6 border-b flex justify-between items-center bg-blue-50">
+                  <h3 className="text-lg font-bold text-blue-800"><i className="fas fa-user mr-2"></i> Chi tiết khách hàng</h3>
+                  <button onClick={() => setViewingCustomer(null)} className="text-gray-400 hover:text-gray-600 text-xl"><i className="fas fa-times"></i></button>
+                </div>
+                <div className="p-6 space-y-3">
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">ID:</span>
+                    <span className="font-mono text-sm">{viewingCustomer.id}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">Họ tên:</span>
+                    <span className="font-semibold">{viewingCustomer.name}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">Email:</span>
+                    <span>{viewingCustomer.email || '-'}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">SĐT:</span>
+                    <span>{viewingCustomer.phone || '-'}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-500">Vai trò:</span>
+                    <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Khách hàng</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-gray-500">Trạng thái:</span>
+                    {viewingCustomer.isLocked
+                      ? <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-semibold">Đã khóa</span>
+                      : <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Hoạt động</span>
+                    }
+                  </div>
+                  <div className="pt-2">
+                    <p className="text-gray-500 text-sm">Số đơn hàng: <strong>{orders.filter(o => o.userId === viewingCustomer.id).length}</strong></p>
+                  </div>
+                </div>
+                <div className="p-6 border-t flex justify-end">
+                  <button className="btn-secondary" onClick={() => setViewingCustomer(null)}>Đóng</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Customer Modal */}
+          {editingCustomer && (
+            <div className="modal-overlay" id="edit-customer-modal" onClick={(e) => e.target === e.currentTarget && setEditingCustomer(null)}>
+              <div className="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+                <div className="p-6 border-b flex justify-between items-center bg-yellow-50">
+                  <h3 className="text-lg font-bold text-yellow-800"><i className="fas fa-edit mr-2"></i> Chỉnh sửa khách hàng</h3>
+                  <button onClick={() => setEditingCustomer(null)} className="text-gray-400 hover:text-gray-600 text-xl"><i className="fas fa-times"></i></button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên</label>
+                    <input type="text" id="edit-customer-name" value={editingCustomer.name} onChange={(e) => setEditingCustomer({...editingCustomer, name: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" id="edit-customer-email" value={editingCustomer.email} onChange={(e) => setEditingCustomer({...editingCustomer, email: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
+                    <input type="tel" id="edit-customer-phone" value={editingCustomer.phone} onChange={(e) => setEditingCustomer({...editingCustomer, phone: e.target.value})} />
+                  </div>
+                </div>
+                <div className="p-6 border-t flex gap-3 justify-end">
+                  <button className="btn-secondary" onClick={() => setEditingCustomer(null)}>Hủy</button>
+                  <button id="btn-save-customer" className="btn-primary" onClick={handleSaveCustomer}>
+                    <i className="fas fa-save mr-1"></i> Lưu
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== USERS TAB (Legacy) ===== */}
       {adminTab === 'users' && (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <table className="w-full text-sm">
