@@ -11,6 +11,7 @@ export const PRODUCTS: Product[] = [
     description: 'Tẩy tế bào chết toàn thân từ hạt cà phê Đắk Lắk nguyên chất, giúp loại bỏ tế bào chết, làm sáng da và kích thích tuần hoàn máu.',
     ingredients: 'Hạt cà phê Đắk Lắk, đường nâu, dầu dừa, vitamin E',
     volume: '200ml',
+    stock: 50,
     inStock: true,
     isVegan: true,
     isPromo: true,
@@ -24,6 +25,7 @@ export const PRODUCTS: Product[] = [
     description: 'Gel rửa mặt dịu nhẹ chiết xuất từ bí đao, giúp làm sạch sâu, kiểm soát dầu và se khít lỗ chân lông.',
     ingredients: 'Bí đao, trà xanh, rau má, nha đam',
     volume: '150ml',
+    stock: 80,
     inStock: true,
     isVegan: true,
     isPromo: false,
@@ -37,6 +39,7 @@ export const PRODUCTS: Product[] = [
     description: 'Nước tẩy trang nhẹ nhàng từ hoa hồng Bulgari, loại bỏ lớp trang điểm và bụi bẩn mà không gây khô da.',
     ingredients: 'Nước hoa hồng, glycerin thực vật, chiết xuất cúc La Mã',
     volume: '200ml',
+    stock: 60,
     inStock: true,
     isVegan: true,
     isPromo: false,
@@ -51,6 +54,7 @@ export const PRODUCTS: Product[] = [
     description: 'Tinh dầu bưởi nguyên chất giúp kích thích mọc tóc, giảm rụng tóc và nuôi dưỡng da đầu khỏe mạnh.',
     ingredients: 'Tinh dầu bưởi, vitamin B5, hà thủ ô, bồ kết',
     volume: '140ml',
+    stock: 45,
     inStock: true,
     isVegan: true,
     isPromo: true,
@@ -64,6 +68,7 @@ export const PRODUCTS: Product[] = [
     description: 'Son dưỡng môi từ dầu dừa nguyên chất, cung cấp độ ẩm sâu, giúp môi mềm mại và căng mọng tự nhiên.',
     ingredients: 'Dầu dừa, sáp ong, vitamin E, dầu hạnh nhân',
     volume: '15g',
+    stock: 100,
     inStock: true,
     isVegan: false,
     isPromo: false,
@@ -77,6 +82,7 @@ export const PRODUCTS: Product[] = [
     description: 'Sữa tắm từ nghệ tươi và sữa chua giúp làm sáng da, mờ thâm và nuôi dưỡng làn da mịn màng.',
     ingredients: 'Nghệ tươi, sữa chua, dầu olive, mật ong',
     volume: '250ml',
+    stock: 70,
     inStock: true,
     isVegan: true,
     isPromo: false,
@@ -90,6 +96,7 @@ export const PRODUCTS: Product[] = [
     description: 'Dầu gội từ vỏ bưởi và bồ kết giúp làm sạch da đầu, giảm gàu và kích thích tóc mọc nhanh.',
     ingredients: 'Vỏ bưởi, bồ kết, hương nhu, sả',
     volume: '250ml',
+    stock: 0,
     inStock: false,
     isVegan: true,
     isPromo: false,
@@ -104,6 +111,7 @@ export const PRODUCTS: Product[] = [
     description: 'Kem dưỡng ẩm từ hoa cúc và nha đam, giúp làm dịu da kích ứng, cấp ẩm và phục hồi hàng rào bảo vệ da.',
     ingredients: 'Hoa cúc, nha đam, dầu jojoba, vitamin B5',
     volume: '50ml',
+    stock: 35,
     inStock: true,
     isVegan: true,
     isPromo: true,
@@ -132,7 +140,10 @@ export const ADMIN_ACCOUNT = {
   phone: '0909000001',
   password: 'admin123',
   role: 'admin' as const,
+  isLocked: false,
 };
+
+export const CATEGORIES = ['Chăm sóc da', 'Chăm sóc tóc', 'Chăm sóc cơ thể', 'Chăm sóc môi'];
 
 export function formatPrice(price: number): string {
   return new Intl.NumberFormat('vi-VN', {
